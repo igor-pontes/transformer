@@ -131,20 +131,21 @@ class Transformer(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim)
         self.dim = dim
-        self.layers = layers
-        self.encoder = EncoderLayer(dim)
-        self.decoder = DecoderLayer(dim)
+        self.encoders = nn.ModuleList([EncoderLayer(dim) for _ in range(layers)])
+        self.decoders = nn.ModuleList([DecoderLayer(dim) for _ in range(layers)])
 
     def forward(self, x, y, vocab):
         embeds_x = self.get_embeddings(x, vocab) + self.pos_encoding(len(x))
         embeds_y = self.get_embeddings(y, vocab) + self.pos_encoding(len(y))
 
-        enc_output = self.encoder(embeds_x, embeds_x, embeds_x)
-        dec_output = self.decoder(embeds_y, enc_output, enc_output)
+        enc_output = embeds_x
+        dec_output = embeds_y
 
-        for i in range(self.layers):
-            enc_output = self.encoder(enc_output, enc_output, enc_output)
-            dec_output = self.decoder(dec_output, enc_output, enc_output)
+        for i, (encoder_layer, decoder_layer) in enumerate(
+            zip(self.encoders, self.decoders)
+        ):
+            enc_output = encoder_layer(enc_output, enc_output, enc_output)
+            dec_output = decoder_layer(dec_output, enc_output, enc_output)
             print(f'{"-"*15} Encoder output {i+1} {"-"*15}')
             print(enc_output)
             print(f'{"-"*15} Decoder output {i+1} {"-"*15}')
