@@ -127,10 +127,11 @@ class DecoderLayer(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, vocab_size, dim=512):
+    def __init__(self, vocab_size, dim=512, layers=6):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim)
         self.dim = dim
+        self.layers = layers
         self.encoder = EncoderLayer(dim)
         self.decoder = DecoderLayer(dim)
 
@@ -138,30 +139,18 @@ class Transformer(nn.Module):
         embeds_x = self.get_embeddings(x, vocab) + self.pos_encoding(len(x))
         embeds_y = self.get_embeddings(y, vocab) + self.pos_encoding(len(y))
 
-        enc_output_1 = self.encoder(embeds_x, embeds_x, embeds_x)
-        dec_output_1 = self.decoder(embeds_y, enc_output_1, enc_output_1)
+        enc_output = self.encoder(embeds_x, embeds_x, embeds_x)
+        dec_output = self.decoder(embeds_y, enc_output, enc_output)
 
-        enc_output_2 = self.encoder(enc_output_1, enc_output_1, enc_output_1)
-        dec_output_2 = self.decoder(dec_output_1, enc_output_2, enc_output_2)
+        for i in range(self.layers):
+            enc_output = self.encoder(enc_output, enc_output, enc_output)
+            dec_output = self.decoder(dec_output, enc_output, enc_output)
+            print(f'{"-"*15} Encoder output {i+1} {"-"*15}')
+            print(enc_output)
+            print(f'{"-"*15} Decoder output {i+1} {"-"*15}')
+            print(dec_output)
 
-        enc_output_3 = self.encoder(enc_output_2, enc_output_2, enc_output_2)
-        dec_output_3 = self.decoder(dec_output_2, enc_output_3, enc_output_3)
-
-        enc_output_4 = self.encoder(enc_output_3, enc_output_3, enc_output_3)
-        dec_output_4 = self.decoder(dec_output_3, enc_output_4, enc_output_4)
-
-        enc_output_5 = self.encoder(enc_output_4, enc_output_4, enc_output_4)
-        dec_output_5 = self.decoder(dec_output_4, enc_output_5, enc_output_5)
-
-        enc_output_6 = self.encoder(enc_output_5, enc_output_5, enc_output_5)
-        dec_output_6 = self.decoder(dec_output_5, enc_output_6, enc_output_6)
-
-        print(f'{"-"*15} Encoder output {"-"*15}')
-        print(enc_output_6)
-        print(f'{"-"*15} Decoder output {"-"*15}')
-        print(dec_output_6)
-
-        return dec_output_6
+        return dec_output
 
     def get_embeddings(self, x, X):
         return self.embedding(torch.tensor([X[word] for word in x], dtype=torch.long))
@@ -210,7 +199,7 @@ def main():
     input_text = "<start> I am a guy that drinks often <end>".split()
     output_text = "<start> cool and I am a guy that smiles".split()
     vocab_size = len(vocab)
-    model = Transformer(vocab_size, 512)
+    model = Transformer(vocab_size, 512, 6)
     model(input_text, output_text, vocab)
 
 
