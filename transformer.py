@@ -15,12 +15,11 @@ class AttentionLayer(nn.Module):
     def __init__(self, dim=512, d_k=512, d_v=512, mask=False):
         super().__init__()
         self.d_k = d_k
-        self.W_q = torch.rand(dim, d_k, requires_grad=True)
-        self.W_k = torch.rand(dim, d_v, requires_grad=True)
-        self.W_v = torch.rand(dim, d_v, requires_grad=True)
-
+        self.W_q = nn.Parameter(torch.rand(dim, d_k) / torch.sqrt(torch.tensor(d_k)))
+        self.W_k = nn.Parameter(torch.rand(dim, d_v) / torch.sqrt(torch.tensor(d_v)))
+        self.W_v = nn.Parameter(torch.rand(dim, d_v) / torch.sqrt(torch.tensor(d_v)))
         self.mask = mask
-        self.softmax = nn.Softmax()
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, q, k, v):
         """
@@ -34,9 +33,13 @@ class AttentionLayer(nn.Module):
         attention_scores = (q @ self.W_q) @ (k @ self.W_k).t()
 
         if self.mask:
-            mask = torch.triu(torch.ones(attention_scores.size())).bool()
+            mask = torch.triu(torch.ones(attention_scores.size()), diagonal=1).bool()
             attention_scores = attention_scores.masked_fill(mask, float("-inf"))
 
+        # out = self.softmax(attention_scores / torch.sqrt(torch.Tensor([self.d_k]))) @ (
+        #     v @ self.W_v
+        # )
+        # return out
         return self.softmax(attention_scores / torch.sqrt(torch.Tensor([self.d_k]))) @ (
             v @ self.W_v
         )
@@ -46,8 +49,10 @@ class MultiHeadAttentionLayer(nn.Module):
     def __init__(self, h=8, dim=512, mask=False):
         super().__init__()
         self.d = dim // h  # d_model/h
-        self.W_o = torch.rand(dim, dim, requires_grad=True)
-        self.heads = [AttentionLayer(512, self.d, self.d, mask) for _ in range(h)]
+        self.W_o = nn.Parameter(torch.rand(dim, dim) / torch.sqrt(torch.tensor(dim)))
+        self.heads = nn.ModuleList(
+            [AttentionLayer(512, self.d, self.d, mask) for _ in range(h)]
+        )
 
     def forward(self, Q, K, V):
         """
@@ -131,8 +136,8 @@ class Transformer(nn.Module):
         self.encoders = nn.ModuleList([EncoderLayer(dim) for _ in range(layers)])
         self.decoders = nn.ModuleList([DecoderLayer(dim) for _ in range(layers)])
         self.debug = debug
-        # self.linear = nn.Linear()
-        # self.softmax = nn.Softmax()
+        self.linear = nn.Linear(dim, dim)
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x, y, vocab):
         embeds_x = self.get_embeddings(x, vocab) + self.pos_encoding(len(x))
@@ -152,8 +157,9 @@ class Transformer(nn.Module):
                 print(f'{"-"*15} Decoder output {i+1} {"-"*15}')
                 print(dec_output)
 
-        print(dec_output.size())
-        return dec_output
+        # print(dec_output)
+        linear = self.linear(dec_output)
+        return self.softmax(linear)
 
     def get_embeddings(self, x, X):
         return self.embedding(torch.tensor([X[word] for word in x], dtype=torch.long))
@@ -203,7 +209,9 @@ def main():
     output_text = "<start> cool and I am a guy that smiles".split()
     vocab_size = len(vocab)
     model = Transformer(vocab_size, 512, 6)
-    model(input_text, output_text, vocab)
+    # model(input_text, output_text, vocab)
+    output = model(input_text, output_text, vocab)
+    print(output)
 
 
 if __name__ == "__main__":
