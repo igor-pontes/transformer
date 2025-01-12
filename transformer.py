@@ -12,7 +12,7 @@ device = (
 
 
 class AttentionLayer(nn.Module):
-    def __init__(self, dim=512, d_k=512, d_v=512, mask=False):
+    def __init__(self, dim=512, d_k=512, d_v=512, mask=False, dropout=0.1):
         super().__init__()
         self.d_k = d_k
         self.W_q = nn.Parameter(torch.rand(dim, d_k) / torch.sqrt(torch.tensor(d_k)))
@@ -20,6 +20,7 @@ class AttentionLayer(nn.Module):
         self.W_v = nn.Parameter(torch.rand(dim, d_v) / torch.sqrt(torch.tensor(d_v)))
         self.mask = mask
         self.softmax = nn.Softmax(dim=1)
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, q, k, v):
         """
@@ -42,12 +43,12 @@ class AttentionLayer(nn.Module):
 
 
 class MultiHeadAttentionLayer(nn.Module):
-    def __init__(self, h=8, dim=512, mask=False):
+    def __init__(self, h=8, dim=512, mask=False, dropout=0.1):
         super().__init__()
         self.d = dim // h  # d_model/h
         self.W_o = nn.Parameter(torch.rand(dim, dim) / torch.sqrt(torch.tensor(dim)))
         self.heads = nn.ModuleList(
-            [AttentionLayer(512, self.d, self.d, mask) for _ in range(h)]
+            [AttentionLayer(512, self.d, self.d, mask, dropout) for _ in range(h)]
         )
 
     def forward(self, Q, K, V):
@@ -73,16 +74,12 @@ class MultiHeadAttentionLayer(nn.Module):
 
 
 class NeuralNetwork(nn.Module):
-    def __init__(
-        self,
-        in_dim=512,
-        out_dim=512,
-        inner_dim=2048,
-    ):
+    def __init__(self, in_dim=512, out_dim=512, inner_dim=2048, dropout=0.1):
         super().__init__()
         self.linear_relu_stack = nn.Sequential(
             nn.Linear(in_dim, inner_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(inner_dim, out_dim),
         )
 
@@ -92,11 +89,11 @@ class NeuralNetwork(nn.Module):
 
 # Each encoder layer has exactly one FFN (feed-forward neural network).
 class EncoderLayer(nn.Module):
-    def __init__(self, dim=512):
+    def __init__(self, dim=512, dropout=0.1):
         super().__init__()
-        self.mh_att_1 = MultiHeadAttentionLayer(dim)
+        self.mh_att_1 = MultiHeadAttentionLayer(dim, dropout=dropout)
         self.layer_norm1 = nn.LayerNorm(dim)
-        self.feed_forward = NeuralNetwork(in_dim=dim, out_dim=dim)
+        self.feed_forward = NeuralNetwork(in_dim=dim, out_dim=dim, dropout=dropout)
         self.layer_norm2 = nn.LayerNorm(dim)
 
     def forward(self, Q, K, V):
@@ -107,7 +104,7 @@ class EncoderLayer(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, dim=512):
+    def __init__(self, dim=512, dropout=0.1):
         super().__init__()
         self.mh_att_1 = MultiHeadAttentionLayer(dim=dim, mask=True)
         self.layer_norm1 = nn.LayerNorm(dim)
@@ -125,12 +122,16 @@ class DecoderLayer(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, vocab_size, dim=512, layers=6, debug=False):
+    def __init__(self, vocab_size, dim=512, layers=6, debug=False, dropout=0.1):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim)
         self.dim = dim
-        self.encoders = nn.ModuleList([EncoderLayer(dim) for _ in range(layers)])
-        self.decoders = nn.ModuleList([DecoderLayer(dim) for _ in range(layers)])
+        self.encoders = nn.ModuleList(
+            [EncoderLayer(dim, dropout) for _ in range(layers)]
+        )
+        self.decoders = nn.ModuleList(
+            [DecoderLayer(dim, dropout) for _ in range(layers)]
+        )
         self.debug = debug
         self.linear = nn.Linear(dim, dim)
         self.softmax = nn.Softmax(dim=1)
