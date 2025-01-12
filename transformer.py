@@ -36,10 +36,6 @@ class AttentionLayer(nn.Module):
             mask = torch.triu(torch.ones(attention_scores.size()), diagonal=1).bool()
             attention_scores = attention_scores.masked_fill(mask, float("-inf"))
 
-        # out = self.softmax(attention_scores / torch.sqrt(torch.Tensor([self.d_k]))) @ (
-        #     v @ self.W_v
-        # )
-        # return out
         return self.softmax(attention_scores / torch.sqrt(torch.Tensor([self.d_k]))) @ (
             v @ self.W_v
         )
@@ -209,7 +205,6 @@ def main():
     output_text = "<start> cool and I am a guy that smiles".split()
     vocab_size = len(vocab)
     model = Transformer(vocab_size, 512, 6)
-    # model(input_text, output_text, vocab)
     output = model(input_text, output_text, vocab)
     print(output)
 
