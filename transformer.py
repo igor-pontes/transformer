@@ -15,21 +15,11 @@ class AttentionLayer(nn.Module):
     def __init__(self, dim=512, d_k=512, d_v=512, mask=False):
         super().__init__()
         self.d_k = d_k
-        self.W_q = (
-            torch.rand(dim, d_k, requires_grad=True)
-            if not mask
-            else torch.triu(torch.rand(dim, d_k, requires_grad=True))
-        )
-        self.W_k = (
-            torch.rand(dim, d_v, requires_grad=True)
-            if not mask
-            else torch.triu(torch.rand(dim, d_v, requires_grad=True))
-        )
-        self.W_v = (
-            torch.rand(dim, d_v, requires_grad=True)
-            if not mask
-            else torch.triu(torch.rand(dim, d_v, requires_grad=True))
-        )
+        self.W_q = torch.rand(dim, d_k, requires_grad=True)
+        self.W_k = torch.rand(dim, d_v, requires_grad=True)
+        self.W_v = torch.rand(dim, d_v, requires_grad=True)
+
+        self.mask = mask
         self.softmax = nn.Softmax()
 
     def forward(self, q, k, v):
@@ -41,9 +31,15 @@ class AttentionLayer(nn.Module):
         (n x N) @ (N x d_v)
         n x d_v
         """
-        return self.softmax(
-            ((q @ self.W_q) @ (k @ self.W_k).t()) / torch.sqrt(torch.Tensor([self.d_k]))
-        ) @ (v @ self.W_v)
+        attention_scores = (q @ self.W_q) @ (k @ self.W_k).t()
+
+        if self.mask:
+            mask = torch.triu(torch.ones(attention_scores.size())).bool()
+            attention_scores = attention_scores.masked_fill(mask, float("-inf"))
+
+        return self.softmax(attention_scores / torch.sqrt(torch.Tensor([self.d_k]))) @ (
+            v @ self.W_v
+        )
 
 
 class MultiHeadAttentionLayer(nn.Module):
@@ -93,6 +89,7 @@ class NeuralNetwork(nn.Module):
         return self.linear_relu_stack(x)
 
 
+# Each encoder layer has exactly one FFN (feed-forward neural network).
 class EncoderLayer(nn.Module):
     def __init__(self, dim=512):
         super().__init__()
@@ -127,12 +124,15 @@ class DecoderLayer(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, vocab_size, dim=512, layers=6):
+    def __init__(self, vocab_size, dim=512, layers=6, debug=False):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim)
         self.dim = dim
         self.encoders = nn.ModuleList([EncoderLayer(dim) for _ in range(layers)])
         self.decoders = nn.ModuleList([DecoderLayer(dim) for _ in range(layers)])
+        self.debug = debug
+        # self.linear = nn.Linear()
+        # self.softmax = nn.Softmax()
 
     def forward(self, x, y, vocab):
         embeds_x = self.get_embeddings(x, vocab) + self.pos_encoding(len(x))
@@ -146,11 +146,13 @@ class Transformer(nn.Module):
         ):
             enc_output = encoder_layer(enc_output, enc_output, enc_output)
             dec_output = decoder_layer(dec_output, enc_output, enc_output)
-            print(f'{"-"*15} Encoder output {i+1} {"-"*15}')
-            print(enc_output)
-            print(f'{"-"*15} Decoder output {i+1} {"-"*15}')
-            print(dec_output)
+            if self.debug:
+                print(f'{"-"*15} Encoder output {i+1} {"-"*15}')
+                print(enc_output)
+                print(f'{"-"*15} Decoder output {i+1} {"-"*15}')
+                print(dec_output)
 
+        print(dec_output.size())
         return dec_output
 
     def get_embeddings(self, x, X):
