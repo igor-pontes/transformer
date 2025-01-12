@@ -43,12 +43,12 @@ class AttentionLayer(nn.Module):
 
 
 class MultiHeadAttentionLayer(nn.Module):
-    def __init__(self, h=8, dim=512, mask=False, dropout=0.1):
+    def __init__(self, h=8, dim=512, mask=False):
         super().__init__()
         self.d = dim // h  # d_model/h
         self.W_o = nn.Parameter(torch.rand(dim, dim) / torch.sqrt(torch.tensor(dim)))
         self.heads = nn.ModuleList(
-            [AttentionLayer(512, self.d, self.d, mask, dropout) for _ in range(h)]
+            [AttentionLayer(512, self.d, self.d, mask) for _ in range(h)]
         )
 
     def forward(self, Q, K, V):
@@ -74,12 +74,11 @@ class MultiHeadAttentionLayer(nn.Module):
 
 
 class NeuralNetwork(nn.Module):
-    def __init__(self, in_dim=512, out_dim=512, inner_dim=2048, dropout=0.1):
+    def __init__(self, in_dim=512, out_dim=512, inner_dim=2048):
         super().__init__()
         self.linear_relu_stack = nn.Sequential(
             nn.Linear(in_dim, inner_dim),
             nn.ReLU(),
-            nn.Dropout(p=dropout),
             nn.Linear(inner_dim, out_dim),
         )
 
@@ -91,10 +90,11 @@ class NeuralNetwork(nn.Module):
 class EncoderLayer(nn.Module):
     def __init__(self, dim=512, dropout=0.1):
         super().__init__()
-        self.mh_att_1 = MultiHeadAttentionLayer(dim, dropout=dropout)
+        self.mh_att_1 = MultiHeadAttentionLayer(dim)
         self.layer_norm1 = nn.LayerNorm(dim)
-        self.feed_forward = NeuralNetwork(in_dim=dim, out_dim=dim, dropout=dropout)
+        self.feed_forward = NeuralNetwork(in_dim=dim, out_dim=dim)
         self.layer_norm2 = nn.LayerNorm(dim)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, Q, K, V):
         out1 = self.mh_att_1(Q, K, V) + Q
@@ -112,11 +112,12 @@ class DecoderLayer(nn.Module):
         self.layer_norm2 = nn.LayerNorm(dim)
         self.feed_forward = NeuralNetwork(in_dim=dim, out_dim=dim)
         self.layer_norm3 = nn.LayerNorm(dim)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, y, K_enc, V_enc):
-        out1 = self.mh_att_1(y, y, y) + y
+        out1 = self.dropout(self.mh_att_1(y, y, y)) + y
         norm1 = self.layer_norm1(out1)
-        out2 = self.mh_att_2(norm1, K_enc, V_enc) + norm1
+        out2 = self.dropout(self.mh_att_2(norm1, K_enc, V_enc)) + norm1
         feed_1 = self.feed_forward(out2) + out2
         return self.layer_norm2(feed_1)
 
@@ -135,13 +136,15 @@ class Transformer(nn.Module):
         self.debug = debug
         self.linear = nn.Linear(dim, dim)
         self.softmax = nn.Softmax(dim=1)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, y, vocab):
-        embeds_x = self.get_embeddings(x, vocab) + self.pos_encoding(len(x))
-        embeds_y = self.get_embeddings(y, vocab) + self.pos_encoding(len(y))
-
-        enc_output = embeds_x
-        dec_output = embeds_y
+        enc_output = self.dropout(
+            self.get_embeddings(x, vocab) + self.pos_encoding(len(x))
+        )
+        dec_output = self.dropout(
+            self.get_embeddings(y, vocab) + self.pos_encoding(len(y))
+        )
 
         for i, (encoder_layer, decoder_layer) in enumerate(
             zip(self.encoders, self.decoders)
@@ -179,6 +182,21 @@ class Transformer(nn.Module):
         return out
 
 
+def train(dataloader, model, loss_fn, optimizer):
+    size = len(dataloader.dataset)
+    model.train()
+    for batch, (X, y) in enumerate(dataloader):
+        X, y = X.to(device), y.to(device)
+        pred = model(X)
+        loss = loss_fn(pred, y)
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+        if batch % 100 == 0:
+            loss, current = loss.item(), (batch + 1) * len(X)
+            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+
+
 def main():
     print(f"Using {device} device")
     vocab = {
@@ -206,7 +224,14 @@ def main():
     output_text = "<start> cool and I am a guy that smiles".split()
     vocab_size = len(vocab)
     model = Transformer(vocab_size, 512, 6)
-    output = model(input_text, output_text, vocab)
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=0.1, betas=(0.9, 0.98), eps=1e-09
+    )
+
+    # output = model(input_text, output_text, vocab)
+    # = nn.CrossEntropyLoss()
+
     print(output)
 
 
